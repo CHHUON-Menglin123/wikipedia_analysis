@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Category Analyzer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-cloud/1.2.5/d3.layout.cloud.min.js"></script>
+    <script src="/static/js/colorPalettes.js"></script>
+    <style>
+        #wordCloud {
+            width: 100%;
+            height: 500px;
+            margin: 20px 0;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        input[type="text"], select {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        input[type="text"] {
+            width: 300px;
+        }
+        select {
+            width: 150px;
+            background-color: white;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .word-frequency {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .word-frequency:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+        #loading {
+            display: none;
+            margin: 20px 0;
+            color: #666;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #processedPages {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        .cached-notice {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Wikipedia Category Word Frequency Analyzer</h1>
+        
+        <div class="input-group">
+            <input type="text" id="categoryInput" placeholder="Enter Wikipedia category name">
+            <select id="colorPalette">
+                <option value="default">Default Colors</option>
+                <option value="pastel">Pastel Colors</option>
+                <option value="dark">Dark Theme</option>
+                <option value="nature">Nature Colors</option>
+                <option value="time">Time-based Colors</option>
+            </select>
+            <button onclick="analyzeCategory()" id="analyzeButton">Analyze</button>
+        </div>
+
+        <div id="loading">Analyzing category... Please wait...</div>
+        
+        <div id="wordCloud"></div>
+        
+        <div id="results"></div>
+        
+        <div id="processedPages"></div>
+    </div>
+
+    <script>
+        function generateWordCloud(words) {
+            // Clear previous word cloud
+            d3.select("#wordCloud").selectAll("*").remove();
+            
+            // Set up the word cloud layout
+            const width = document.getElementById('wordCloud').offsetWidth;
+            const height = 500;
+            
+            // Convert words array to the format required by d3.cloud
+            const wordData = words.map(([text, value]) => ({
+                text,
+                size: Math.sqrt(value) * 5 + 10 // Scale the font size based on frequency
+            }));
+            
+            // Create the layout
+            const layout = d3.layout.cloud()
+                .size([width, height])
+                .words(wordData)
+                .padding(5)
+                .rotate(() => (~~(Math.random() * 2) * 90)) // Rotate words 0 or 90 degrees
+                .fontSize(d => d.size)
+                .on("end", draw);
+            
+            // Start the layout calculation
+            layout.start();
+            
+            // Function to draw the word cloud
+            function draw(words) {
+                const svg = d3.select("#wordCloud").append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+                
+                const wordGroup = svg.append("g")
+                    .attr("transform", `translate(${width/2},${height/2})`);
+                
+                // Get selected color palette
+                const paletteSelect = document.getElementById('colorPalette');
+                let selectedPalette = paletteSelect.value;
+                
+                // If time-based is selected, use the time-based palette
+                const colors = selectedPalette === 'time' 
+                    ? getTimeBasedPalette()
+                    : colorPalettes[selectedPalette];
+                
+                // Create color scale
+                const color = d3.scaleOrdinal(colors);
+                
+                wordGroup.selectAll("text")
+                    .data(words)
+                    .enter().append("text")
+                    .style("font-size", d => `${d.size}px`)
+                    .style("font-family", "Impact")
+                    .style("fill", (d, i) => color(i))
+                    .attr("text-anchor", "middle")
+                    .attr("transform", d => `translate(${d.x},${d.y})rotate(${d.rotate})`)
+                    .text(d => d.text)
+                    .on("mouseover", function(event, d) {
+                        d3.select(this)
+                            .transition()
+                            .style("font-size", `${d.size * 1.2}px`)
+                            .style("cursor", "pointer");
+                    })
+                    .on("mouseout", function(event, d) {
+                        d3.select(this)
+                            .transition()
+                            .style("font-size", `${d.size}px`);
+                    });
+            }
+        }
+        
+        async function analyzeCategory() {
+            const categoryInput = document.getElementById('categoryInput');
+            const analyzeButton = document.getElementById('analyzeButton');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            const processedPages = document.getElementById('processedPages');
+            
+            const category = categoryInput.value.trim();
+            if (!category) {
+                alert('Please enter a category name');
+                return;
+            }
+            
+            // Disable input and button, show loading
+            categoryInput.disabled = true;
+            analyzeButton.disabled = true;
+            loading.style.display = 'block';
+            results.innerHTML = '';
+            processedPages.innerHTML = '';
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ category }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Show cached notice if applicable
+                    if (data.cached) {
+                        results.innerHTML = '<div class="cached-notice">Results loaded from cache</div>';
+                    }
+                    
+                    // Convert frequencies object to sorted array
+                    const sortedWords = Object.entries(data.frequencies)
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 50);
+                    
+                    // Generate word cloud
+                    generateWordCloud(sortedWords);
+                    
+                    // Add frequencies to results
+                    results.innerHTML += '<h2>Top 50 Most Common Words</h2>';
+                    sortedWords.forEach(([word, frequency]) => {
+                        results.innerHTML += `
+                            <div class="word-frequency">
+                                <span>${word}</span>
+                                <span>${frequency}</span>
+                            </div>
+                        `;
+                    });
+                    
+                    // Show processed pages if available
+                    if (data.processed_pages) {
+                        processedPages.innerHTML = `
+                            <h3>Processed Pages:</h3>
+                            <ul>
+                                ${data.processed_pages.map(page => `<li>${page}</li>`).join('')}
+                            </ul>
+                        `;
+                    }
+                } else {
+                    results.innerHTML = `
+                        <div class="status error">
+                            Error: ${data.error || 'Failed to analyze category'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="status error">
+                        Error: ${error.message}
+                    </div>
+                `;
+            } finally {
+                // Re-enable input and button, hide loading
+                categoryInput.disabled = false;
+                analyzeButton.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        // Add enter key support
+        document.getElementById('categoryInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                analyzeCategory();
+            }
+        });
+    </script>
+</body>
+</html>
